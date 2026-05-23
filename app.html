@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA - Autonomous Oil Spill Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hero-section {
+            position: absolute;
+            top: 60px;
+            left: 60px;
+        }
+
+        .title {
+            font-size: 96px;
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            color: #00f2ff;
+            text-shadow: 
+                0 0 10px rgba(0, 242, 255, 0.8),
+                0 0 20px rgba(0, 242, 255, 0.6),
+                0 0 40px rgba(0, 242, 255, 0.4),
+                0 0 80px rgba(0, 242, 255, 0.2);
+            margin: 0;
+            cursor: default;
+            user-select: none;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: rgba(0, 242, 255, 0.6);
+            letter-spacing: 0.4em;
+            margin-top: 15px;
+            text-transform: uppercase;
+            font-weight: 300;
+        }
+
+        .layers-panel {
+            position: absolute;
+            right: 60px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 35px;
+            opacity: 0;
+            transition: opacity 1s ease;
+            pointer-events: auto;
+        }
+
+        .layers-panel.visible {
+            opacity: 1;
+        }
+
+        .layer-item {
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            transform: translateX(100px);
+            opacity: 0;
+            animation: slideIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .layer-item:nth-child(1) { animation-delay: 0.2s; }
+        .layer-item:nth-child(2) { animation-delay: 0.3s; }
+        .layer-item:nth-child(3) { animation-delay: 0.4s; }
+        .layer-item:nth-child(4) { animation-delay: 0.5s; }
+        .layer-item:nth-child(5) { animation-delay: 0.6s; }
+
+        @keyframes slideIn {
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .layer-label {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .layer-item:hover .layer-label {
+            transform: translateX(-8px);
+        }
+
+        .layer-index {
+            font-size: 11px;
+            opacity: 0.4;
+            font-weight: 400;
+        }
+
+        .layer-name {
+            position: relative;
+        }
+
+        .layer-details {
+            position: absolute;
+            right: calc(100% + 30px);
+            top: 50%;
+            transform: translateY(-50%) translateX(20px);
+            background: rgba(5, 8, 15, 0.98);
+            border: 1px solid currentColor;
+            border-radius: 2px;
+            padding: 20px 24px;
+            width: 320px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 30px currentColor;
+        }
+
+        .layer-item:hover .layer-details {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+        }
+
+        .detail-connector {
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            width: 30px;
+            height: 1px;
+            background: linear-gradient(90deg, currentColor, transparent);
+        }
+
+        .detail-text {
+            font-size: 13px;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.85);
+            font-weight: 400;
+            letter-spacing: 0.03em;
+        }
+
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 242, 255, 0.03) 0px,
+                transparent 1px,
+                transparent 2px,
+                rgba(0, 242, 255, 0.03) 3px
+            );
+            pointer-events: none;
+            opacity: 0.4;
+            animation: scanMove 8s linear infinite;
+        }
+
+        @keyframes scanMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(20px); }
+        }
+
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.8) 100%);
+            pointer-events: none;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00f2ff;
+            font-size: 18px;
+            letter-spacing: 0.3em;
+            text-shadow: 0 0 20px rgba(0, 242, 255, 0.8);
+        }
+
+        .loading.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div class="overlay">
+        <div class="scan-line"></div>
+        <div class="vignette"></div>
+        
+        <div class="loading" id="loading">INITIALIZING...</div>
+        
+        <div class="hero-section">
+            <div class="title" id="title">SPECTRA</div>
+            <div class="subtitle">Autonomous Oil Spill Detection System</div>
+        </div>
+
+        <div class="layers-panel" id="layersPanel">
+            <div class="layer-item" data-layer="0">
+                <div class="layer-label" style="color: #00f2ff;">
+                    <span class="layer-index">01</span>
+                    <span class="layer-name" data-text="U-Net Detection">U-Net Detection</span>
+                </div>
+                <div class="layer-details" style="border-color: #00f2ff; box-shadow: 0 0 30px rgba(0, 242, 255, 0.3);">
+                    <div class="detail-connector" style="background: linear-gradient(90deg, #00f2ff, transparent);"></div>
+                    <div class="detail-text">Deep learning convolutional neural network identifies oil spill signatures in SAR imagery with 94% accuracy</div>
+                </div>
+            </div>
+
+            <div class="layer-item" data-layer="1">
+                <div class="layer-label" style="color: #00ff88;">
+                    <span class="layer-index">02</span>
+                    <span class="layer-name" data-text="Look-alike Classifier">Look-alike Classifier</span>
+                </div>
+                <div class="layer-details" style="border-color: #00ff88; box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);">
+                    <div class="detail-connector" style="background: linear-gradient(90deg, #00ff88, transparent);"></div>
+                    <div class="detail-text">Secondary validation model filters false positives from natural phenomena like algae blooms and biogenic slicks</div>
+                </div>
+            </div>
+
+            <div class="layer-item" data-layer="2">
+                <div class="layer-label" style="color: #ffaa00;">
+                    <span class="layer-index">03</span>
+                    <span class="layer-name" data-text="Wind Context (ERA5)">Wind Context (ERA5)</span>
+                </div>
+                <div class="layer-details" style="border-color: #ffaa00; box-shadow: 0 0 30px rgba(255, 170, 0, 0.3);">
+                    <div class="detail-connector" style="background: linear-gradient(90deg, #ffaa00, transparent);"></div>
+                    <div class="detail-text">Cross-references meteorological wind patterns to confirm spill movement dynamics and trajectory predictions</div>
+                </div>
+            </div>
+
+            <div class="layer-item" data-layer="3">
+                <div class="layer-label" style="color: #ff00ff;">
+                    <span class="layer-index">04</span>
+                    <span class="layer-name" data-text="Sentinel-2 Validation">Sentinel-2 Validation</span>
+                </div>
+                <div class="layer-details" style="border-color: #ff00ff; box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);">
+                    <div class="detail-connector" style="background: linear-gradient(90deg, #ff00ff, transparent);"></div>
+                    <div class="detail-text">Optical satellite imagery provides visual confirmation of SAR-detected anomalies under clear weather conditions</div>
+                </div>
+            </div>
+
+            <div class="layer-item" data-layer="4">
+                <div class="layer-label" style="color: #ff3366;">
+                    <span class="layer-index">05</span>
+                    <span class="layer-name" data-text="AIS Vessel Attribution">AIS Vessel Attribution</span>
+                </div>
+                <div class="layer-details" style="border-color: #ff3366; box-shadow: 0 0 30px rgba(255, 51, 102, 0.3);">
+                    <div class="detail-connector" style="background: linear-gradient(90deg, #ff3366, transparent);"></div>
+                    <div class="detail-text">Correlates maritime traffic data to identify probable source vessels based on position, heading, and timing</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Glitch effect for title
+        const titleElement = document.getElementById('title');
+        const glitchChars = '!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
+        const originalText = 'SPECTRA';
+        let isGlitching = false;
+
+        titleElement.addEventListener('mouseenter', () => {
+            if (isGlitching) return;
+            isGlitching = true;
+            
+            let iterations = 0;
+            const interval = setInterval(() => {
+                titleElement.textContent = originalText.split('').map((char, index) => {
+                    if (index < iterations) return originalText[index];
+                    return glitchChars[Math.floor(Math.random() * glitchChars.length)];
+                }).join('');
+                
+                iterations += 0.3;
+                
+                if (iterations >= originalText.length) {
+                    clearInterval(interval);
+                    titleElement.textContent = originalText;
+                    isGlitching = false;
+                }
+            }, 30);
+        });
+
+        // Glitch effect for layer names
+        document.querySelectorAll('.layer-name').forEach(nameEl => {
+            const originalName = nameEl.getAttribute('data-text');
+            let layerGlitching = false;
+
+            nameEl.parentElement.parentElement.addEventListener('mouseenter', () => {
+                if (layerGlitching) return;
+                layerGlitching = true;
+                
+                let iterations = 0;
+                const interval = setInterval(() => {
+                    nameEl.textContent = originalName.split('').map((char, index) => {
+                        if (index < iterations) return originalName[index];
+                        if (char === ' ') return ' ';
+                        if (char === '-') return '-';
+                        if (char === '(' || char === ')') return char;
+                        return glitchChars[Math.floor(Math.random() * glitchChars.length)];
+                    }).join('');
+                    
+                    iterations += 0.4;
+                    
+                    if (iterations >= originalName.length) {
+                        clearInterval(interval);
+                        nameEl.textContent = originalName;
+                        layerGlitching = false;
+                    }
+                }, 25);
+            });
+        });
+
+        // Three.js Setup
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 25);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.setClearColor(0x000000, 0);
+        container.appendChild(renderer.domElement);
+
+        // Lighting setup
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight(0x00f2ff, 1.2);
+        mainLight.position.set(10, 15, 10);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        scene.add(mainLight);
+
+        const rimLight = new THREE.PointLight(0xff00ff, 0.8, 50);
+        rimLight.position.set(-15, 5, -10);
+        scene.add(rimLight);
+
+        const accentLight = new THREE.PointLight(0x00ff88, 0.6, 40);
+        accentLight.position.set(10, -5, 15);
+        scene.add(accentLight);
+
+        // Particle field for depth
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particleCount = 2000;
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 100;
+            positions[i + 1] = (Math.random() - 0.5) * 100;
+            positions[i + 2] = (Math.random() - 0.5) * 100;
+            
+            const colorChoice = Math.random();
+            if (colorChoice < 0.33) {
+                colors[i] = 0 / 255;
+                colors[i + 1] = 242 / 255;
+                colors[i + 2] = 255 / 255;
+            } else if (colorChoice < 0.66) {
+                colors[i] = 255 / 255;
+                colors[i + 1] = 0 / 255;
+                colors[i + 2] = 255 / 255;
+            } else {
+                colors[i] = 0 / 255;
+                colors[i + 1] = 255 / 255;
+                colors[i + 2] = 136 / 255;
+            }
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const particlesMaterial = new THREE.PointsMaterial({
+            size: 0.1,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleField = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particleField);
+
+        // Create magnifying glass
+        const magnifyingGlass = new THREE.Group();
+
+        // Glass lens
+        const lensGeometry = new THREE.CircleGeometry(2.5, 64);
+        const lensMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.1,
+            metalness: 0,
+            roughness: 0,
+            transmission: 0.95,
+            thickness: 1,
+            envMapIntensity: 1,
+            clearcoat: 1,
+            clearcoatRoughness: 0,
+            side: THREE.DoubleSide
+        });
+        const lens = new THREE.Mesh(lensGeometry, lensMaterial);
+        lens.castShadow = true;
+        lens.receiveShadow = true;
+        magnifyingGlass.add(lens);
+
+        // Lens rim with glow
+        const rimGeometry = new THREE.TorusGeometry(2.5, 0.12, 16, 64);
+        const rimMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00f2ff,
+            metalness: 0.95,
+            roughness: 0.1,
+            emissive: 0x00f2ff,
+            emissiveIntensity: 0.6
+        });
+        const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+        rim.castShadow = true;
+        magnifyingGlass.add(rim);
+
+        // Handle
+        const handleCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0, -2.5, 0),
+            new THREE.Vector3(0.3, -3.5, 0.1),
+            new THREE.Vector3(0.5, -4.5, 0.2),
+            new THREE.Vector3(0.6, -5.5, 0.2)
+        ]);
+
+        const handleGeometry = new THREE.TubeGeometry(handleCurve, 20, 0.18, 16, false);
+        const handleMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00f2ff,
+            metalness: 0.9,
+            roughness: 0.2,
+            emissive: 0x00f2ff,
+            emissiveIntensity: 0.3
+        });
+        const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+        handle.castShadow = true;
+        magnifyingGlass.add(handle);
+
+        scene.add(magnifyingGlass);
+
+        // Create detection layers
+        const layerColors = [
+            0x00f2ff, // U-Net
+            0x00ff88, // Look-alike
+            0xffaa00, // Wind
+            0xff00ff, // Sentinel-2
+            0xff3366  // AIS
+        ];
+
+        const detectionLayers = [];
+        layerColors.forEach((color, index) => {
+            const layerGroup = new THREE.Group();
+            
+            // Main glass layer
+            const layerGeometry = new THREE.CircleGeometry(2.2, 64);
+            const layerMaterial = new THREE.MeshPhysicalMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.15,
+                metalness: 0,
+                roughness: 0,
+                transmission: 0.9,
+                thickness: 0.5,
+                side: THREE.DoubleSide
+            });
+            const layerMesh = new THREE.Mesh(layerGeometry, layerMaterial);
+            layerMesh.castShadow = true;
+            layerMesh.receiveShadow = true;
+            layerGroup.add(layerMesh);
+
+            // Layer ring
+            const layerRimGeometry = new THREE.TorusGeometry(2.2, 0.08, 16, 64);
+            const layerRimMaterial = new THREE.MeshStandardMaterial({
+                color: color,
+                metalness: 0.9,
+                roughness: 0.15,
+                emissive: color,
+                emissiveIntensity: 0.7
+            });
+            const layerRim = new THREE.Mesh(layerRimGeometry, layerRimMaterial);
+            layerRim.castShadow = true;
+            layerGroup.add(layerRim);
+
+            // Inner glow ring
+            const glowGeometry = new THREE.RingGeometry(2.1, 2.3, 64);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+            const glowRing = new THREE.Mesh(glowGeometry, glowMaterial);
+            layerGroup.add(glowRing);
+
+            layerGroup.visible = false;
+            scene.add(layerGroup);
+            detectionLayers.push(layerGroup);
+        });
+
+        // Animation state
+        let animationPhase = 0;
+        const startTime = Date.now();
+
+        const animationDurations = {
+            entrance: 2500,      // Rotation entrance
+            positioning: 1200,   // Move to left
+            layerDelay: 800,     // Wait before layers
+            layerExpansion: 2000 // Layers expand
+        };
+
+        let totalDuration = animationDurations.entrance + 
+                          animationDurations.positioning + 
+                          animationDurations.layerDelay + 
+                          animationDurations.layerExpansion;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const elapsed = Date.now() - startTime;
+            const time = Date.now() * 0.001;
+
+            // Rotate particle field slowly
+            particleField.rotation.y = time * 0.05;
+            particleField.rotation.x = time * 0.02;
+
+            // Phase 1: Entrance rotation (0-2500ms)
+            if (elapsed < animationDurations.entrance) {
+                const progress = elapsed / animationDurations.entrance;
+                const eased = 1 - Math.pow(1 - progress, 4); // Ease out quart
+                
+                magnifyingGlass.rotation.y = eased * Math.PI * 3;
+                magnifyingGlass.rotation.z = Math.sin(eased * Math.PI) * Math.PI * 0.3;
+                magnifyingGlass.position.z = -5 + (5 * eased);
+                
+                camera.position.z = 25 - (3 * eased);
+            }
+            // Phase 2: Position to left (2500-3700ms)
+            else if (elapsed < animationDurations.entrance + animationDurations.positioning) {
+                const progress = (elapsed - animationDurations.entrance) / animationDurations.positioning;
+                const eased = 1 - Math.pow(1 - progress, 3);
+                
+                magnifyingGlass.position.x = -8 * eased;
+                magnifyingGlass.position.y = 3 * eased;
+                magnifyingGlass.rotation.z = Math.PI * 0.3 + (-Math.PI * 0.35 * eased);
+                magnifyingGlass.rotation.y = Math.PI * 3 + (Math.PI * 0.15 * eased);
+            }
+            // Phase 3: Layer expansion (4500-6500ms)
+            else if (elapsed < totalDuration) {
+                const progress = (elapsed - animationDurations.entrance - 
+                                animationDurations.positioning - 
+                                animationDurations.layerDelay) / 
+                               animationDurations.layerExpansion;
+                
+                detectionLayers.forEach((layer, index) => {
+                    const layerDelay = index * 0.12;
+                    const layerProgress = Math.max(0, Math.min(1, (progress - layerDelay) / (1 - layerDelay * 0.8)));
+                    
+                    if (layerProgress > 0) {
+                        layer.visible = true;
+                        
+                        // Easing with bounce
+                        const eased = layerProgress < 0.5
+                            ? 4 * layerProgress * layerProgress * layerProgress
+                            : 1 - Math.pow(-2 * layerProgress + 2, 3) / 2;
+                        
+                        const bounce = Math.sin(layerProgress * Math.PI * 2) * 
+                                     (1 - layerProgress) * 0.5;
+                        
+                        const spacing = 3.5;
+                        const angle = -Math.PI * 0.05;
+                        const targetX = -8 + ((index + 1) * spacing * Math.cos(angle));
+                        const targetY = 3 + ((index + 1) * spacing * Math.sin(angle));
+                        const targetZ = (index + 1) * 0.8;
+                        
+                        layer.position.x = -8 + (targetX - (-8)) * eased;
+                        layer.position.y = 3 + (targetY - 3) * eased + bounce;
+                        layer.position.z = targetZ * eased;
+                        layer.rotation.z = angle * eased;
+                        layer.rotation.y = Math.PI * 3.15 + (Math.PI * 0.02 * eased);
+                    }
+                });
+
+                // Show UI when animation is near complete
+                if (progress > 0.7 && !document.getElementById('layersPanel').classList.contains('visible')) {
+                    document.getElementById('layersPanel').classList.add('visible');
+                    document.getElementById('loading').classList.add('hidden');
+                }
+            }
+            // Phase 4: Idle floating
+            else {
+                const floatTime = (elapsed - totalDuration) * 0.001;
+                
+                magnifyingGlass.position.y += Math.sin(floatTime * 0.8) * 0.003;
+                magnifyingGlass.rotation.z += Math.sin(floatTime * 0.5) * 0.0002;
+                
+                detectionLayers.forEach((layer, index) => {
+                    layer.position.y += Math.sin(floatTime * 0.8 + index * 0.4) * 0.002;
+                    layer.rotation.y += 0.001;
+                    
+                    // Pulse emissive on hover
+                    const layerItem = document.querySelector(`[data-layer="${index}"]`);
+                    if (layerItem && layerItem.matches(':hover')) {
+                        layer.children[1].material.emissiveIntensity = 
+                            0.7 + Math.sin(floatTime * 3) * 0.3;
+                    } else {
+                        layer.children[1].material.emissiveIntensity = 0.7;
+                    }
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Interactive hover effects for layers
+        document.querySelectorAll('.layer-item').forEach((item, index) => {
+            item.addEventListener('mouseenter', () => {
+                if (detectionLayers[index]) {
+                    detectionLayers[index].children[1].material.emissiveIntensity = 1.2;
+                    detectionLayers[index].scale.set(1.08, 1.08, 1.08);
+                }
+            });
+
+            item.addEventListener('mouseleave', () => {
+                if (detectionLayers[index]) {
+                    detectionLayers[index].children[1].material.emissiveIntensity = 0.7;
+                    detectionLayers[index].scale.set(1, 1, 1);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
